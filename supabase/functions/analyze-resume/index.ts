@@ -259,6 +259,13 @@ Rewrite the FULL resume in clean, ATS-friendly Markdown:
 - NEVER use literal \\n or \\t escape sequences — use real newlines
 - Preserve ALL original dates, company names, school names, and GPAs exactly
 - Keep the rewritten resume under 700 words
+
+CRITICAL FORMATTING RULES — you MUST follow these exactly:
+1. Every ## heading and every ### heading MUST be preceded by a blank line (two newline characters). Never place a heading directly after a sentence with no line break between them.
+2. The first bullet point of every list MUST be on its own new line, separated from the heading above it by exactly one newline.
+3. Each bullet point MUST be on its own line. Never concatenate multiple bullets onto a single line.
+4. Never write "## EXPERIENCE...details.## EDUCATION" — always insert a blank line before ## EDUCATION.
+5. The structure must be: text → blank line → ## HEADING → newline → content. No exceptions.
 `;
 
     const geminiResponse = await fetch(geminiUrl, {

@@ -26,16 +26,30 @@ interface ResultsProps {
 /* ─── Markdown normaliser ──────────────────────────────────────────────────── */
 function normalizeResume(raw: string): string {
   return raw
-    // literal \n → real newline
+    // ── Step 1: convert escape sequences to real characters ──────────────────
     .replace(/\\n/g, "\n")
-    // literal \t → tab
     .replace(/\\t/g, "\t")
-    // * bullet at start of line (after normalising newlines)
+
+    // ── Step 2: defensive split — insert \n\n before any ## heading or \n
+    //    before any * bullet that Gemini placed inline without a newline.
+    //    Uses zero-width lookbehind so heading chars are NOT consumed.
+    //
+    //    Rule A: insert blank line before the START of a heading (#, ##, ###)
+    //    Lookbehind [^\n#] ensures we match only once (before the first #)
+    //    and never trigger between the # chars of ## or ###.
+    .replace(/(?<=[^\n#])(?=#{1,3} )/g, "\n\n")
+    //    Rule B: insert newline before '* ' bullet following non-newline non-* text
+    .replace(/(?<=[^\n*])(?=\* )/g, "\n")
+
+    // ── Step 3: normalise * bullets at start of line to - ────────────────────
     .replace(/^\* /gm, "- ")
-    // clean up 3+ blank lines
+
+    // ── Step 4: collapse excess blank lines ──────────────────────────────────
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
+
+
 
 /* ─── Markdown → HTML ──────────────────────────────────────────────────────── */
 function renderMarkdown(raw: string): string {
