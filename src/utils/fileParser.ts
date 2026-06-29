@@ -2,9 +2,8 @@
 import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
 
-// Set up PDF.js worker from a CDN matching the package version exactly to prevent runtime mismatch crashes
-const PDFJS_VERSION = "6.1.200";
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+// Set up PDF.js worker locally to prevent external CDN dependency failure
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 /**
  * Extracts raw text from a PDF file using pdfjs-dist
@@ -32,10 +31,26 @@ export async function extractTextFromPdf(file: File): Promise<string> {
           fullText += pageText + "\n";
         }
         
-        resolve(fullText.trim());
-      } catch (error) {
-        console.error("PDF extraction error:", error);
-        reject(new Error("Failed to parse PDF. The file might be password-protected or corrupted."));
+        const cleanedText = fullText.trim();
+        // Check if there is practically no readable text layer
+        if (cleanedText.replace(/\s+/g, "").length === 0) {
+          throw new Error("This PDF appears to be a scanned image with no selectable text. Please upload a text-based PDF or a DOCX file instead.");
+        }
+        
+        resolve(cleanedText);
+      } catch (error: any) {
+        console.error("PDF extraction error full details:", error);
+        if (error && error.stack) {
+          console.error("PDF extraction error stack trace:", error.stack);
+        }
+        
+        if (error && error.name === "PasswordException") {
+          reject(new Error("This PDF is password-protected. Please remove the password and try again."));
+        } else if (error && error.message && error.message.includes("scanned image")) {
+          reject(error);
+        } else {
+          reject(new Error("Failed to parse PDF. The file might be password-protected or corrupted."));
+        }
       }
     };
     reader.onerror = () => reject(new Error("Failed to read file buffer."));

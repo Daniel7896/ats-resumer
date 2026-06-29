@@ -152,18 +152,113 @@ serve(async (req) => {
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiApiKey}`;
 
     const promptText = `
+You are an expert ATS (Applicant Tracking System) analyst with 10+ years experience evaluating resumes at FAANG-tier companies. You are also a professional resume writer.
+
+═══════════════════════════════════════════════════════════
+FEW-SHOT CALIBRATION EXAMPLES (study these before scoring)
+═══════════════════════════════════════════════════════════
+
+EXAMPLE A — Score: 87
+  JD required: Python, Django, REST APIs, PostgreSQL, Docker, CI/CD, Agile, Git
+  Resume had:  Python, Django, REST APIs, PostgreSQL, Docker, Git, Agile (7/8 = 87%)
+  Role match:  Backend Engineer → Backend Developer (strong match)
+  Reasoning:   One missing skill (CI/CD) in an otherwise tightly matched profile.
+
+EXAMPLE B — Score: 62
+  JD required: React, TypeScript, GraphQL, Jest, Figma, Storybook, Accessibility
+  Resume had:  React, TypeScript, Jest (3/7 = 43%)
+  Role match:  Frontend Developer → UI Developer (reasonable match)
+  Reasoning:   Core framework present but tooling gaps (GraphQL, Figma, Storybook) drop the score.
+
+EXAMPLE C — Score: 31
+  JD required: Machine Learning, PyTorch, TensorFlow, MLOps, Kubernetes, A/B Testing, Statistics
+  Resume had:  Python, some data analysis (1/7 = 14%)
+  Role match:  Data Analyst → ML Engineer (weak match)
+  Reasoning:   General Python present but no ML-specific stack. Clear role mismatch.
+
+═══════════════════════════════════════════════════════════
+NOW ANALYSE THE FOLLOWING:
+═══════════════════════════════════════════════════════════
+
 Job Description:
+---
 ${job_description}
+---
 
-Resume Text:
+Candidate Resume:
+---
 ${resume_text}
+---
 
-Perform an expert analysis of the resume against the job description:
-1. Provide an ATS compatibility score from 0 to 100 based on core qualifications, role match, and formatting suitability.
-2. Extract the matched key terms and skills that are already present in the resume.
-3. Identify crucial missing keywords and skills from the job description that should be integrated.
-4. Give specific, actionable section feedback for the Summary, Experience, and Skills sections.
-5. Generate a fully tailored, rewritten version of the resume in clean Markdown format. Focus bullet points on achievements and metrics, preserving dates and names of the original resume.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK 1 — ATS Score: Chain-of-Thought Approach
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Follow these steps IN ORDER to derive ats_score:
+
+STEP A: Extract every distinct keyword, tool, skill, framework, certification, and domain term from the job description. Count them — call this JD_TOTAL.
+
+STEP B: For each JD keyword, check if an equivalent term exists in the resume (allow synonyms: e.g. "k8s" = "Kubernetes", "ML" = "Machine Learning"). Count matches — call this MATCHED.
+
+STEP C: Calculate keyword_ratio = MATCHED / JD_TOTAL (as a percentage).
+
+STEP D: Check role/title match:
+  - Strong (same title family)   → +5 bonus points
+  - Moderate (adjacent field)    → 0 adjustment
+  - Weak (different domain)      → -10 penalty points
+
+STEP E: Apply experience-level adjustment:
+  - JD wants senior/lead but resume shows junior/no management → -8 points
+  - Good level match                                           → 0 adjustment
+  - Candidate is overqualified (senior applying to mid)        → -3 points
+
+STEP F: Final score = ROUND(keyword_ratio + title_bonus + experience_adjustment)
+  - Clamp to range [0, 100]
+  - Do NOT snap to round numbers (avoid 0, 25, 50, 75, 100 unless genuinely correct)
+
+Return ONLY the final integer in ats_score — do NOT include your reasoning steps.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK 2 — matched_keywords
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+List every keyword, tool, framework, certification, and domain term from the JD that IS present in the resume.
+Rules:
+- Use the JD's exact spelling (e.g. "Node.js" not "nodejs")
+- Include synonyms that match (e.g. include "React" if resume says "ReactJS")
+- Be exhaustive — do not skip minor matches
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK 3 — missing_keywords
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+List every keyword, tool, skill, and certification from the JD that is ABSENT from the resume.
+Rules:
+- Prioritise critical/required skills over nice-to-haves
+- Keep the list focused (max 15 items) — only genuinely missing terms
+- Use JD's exact spelling
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK 4 — section_feedback (3 keys: summary, experience, skills)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For each key write 2–4 concise, specific, actionable sentences. Reference actual terms from the JD.
+- summary:    What headline, value proposition, and target-role keywords to add to the top of the resume.
+- experience: Which specific achievements to reframe with metrics, and which JD terms to weave into bullets.
+- skills:     Exactly which skills from the missing list to add, and how to group them for ATS parsing.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TASK 5 — rewritten_resume (clean Markdown)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Rewrite the FULL resume in clean, ATS-friendly Markdown:
+- # Candidate Full Name  (H1 — first line)
+- Contact info on the next line as plain text
+- ## SECTION HEADERS in uppercase (SUMMARY, EXPERIENCE, EDUCATION, SKILLS, CERTIFICATIONS, PROJECTS)
+- ### Job Title | Company Name | Date Range  (H3 for each role)
+- Use **bold** ONLY for job titles and company names
+- All bullet points start with -  followed by a space
+- Every bullet must start with a STRONG action verb (Led, Built, Designed, Automated, Reduced, etc.)
+- Add quantified metrics where truthful (e.g. "reduced load time by 40%")
+- Weave in 3–5 of the missing keywords naturally where truthful
+- NEVER use literal \\n or \\t escape sequences — use real newlines
+- Preserve ALL original dates, company names, school names, and GPAs exactly
+- Keep the rewritten resume under 700 words
 `;
 
     const geminiResponse = await fetch(geminiUrl, {
@@ -234,7 +329,7 @@ Perform an expert analysis of the resume against the job description:
       });
     }
 
-    let parsedResult;
+    let parsedResult: any;
     try {
       parsedResult = JSON.parse(responseJsonText);
     } catch (parseError) {
@@ -245,6 +340,60 @@ Perform an expert analysis of the resume against the job description:
       });
     }
 
+    // ── Score validation & correction ───────────────────────────────────────
+    // Cross-check AI score against actual keyword math. If the AI score drifts
+    // more than 18 points from what the data supports, recalculate from keywords.
+    {
+      const matched = Array.isArray(parsedResult.matched_keywords) ? parsedResult.matched_keywords.length : 0;
+      const missing = Array.isArray(parsedResult.missing_keywords) ? parsedResult.missing_keywords.length : 0;
+      const total = matched + missing;
+
+      if (total > 0) {
+        const keywordRatio = (matched / total) * 100;
+
+        // Derive a keyword-based score using the same rubric as the prompt
+        let derivedScore: number;
+        if (keywordRatio >= 75) derivedScore = Math.round(keywordRatio * 0.85 + 12); // maps 75→76, 100→97
+        else if (keywordRatio >= 50) derivedScore = Math.round(keywordRatio * 0.76 + 8); // maps 50→46, 74→64
+        else if (keywordRatio >= 30) derivedScore = Math.round(keywordRatio * 0.7 + 3);  // maps 30→24, 49→37
+        else derivedScore = Math.round(keywordRatio * 0.65);                            // maps 0→0, 29→19
+
+        const aiScore = typeof parsedResult.ats_score === "number" ? parsedResult.ats_score : 0;
+        const drift = Math.abs(aiScore - derivedScore);
+
+        if (drift > 18 || aiScore < 0 || aiScore > 100) {
+          console.warn(
+            `Score drift detected: AI said ${aiScore}, keyword math says ${derivedScore} ` +
+            `(matched=${matched}, total=${total}, ratio=${keywordRatio.toFixed(1)}%). Correcting.`
+          );
+          // Blend: 70% keyword-math, 30% AI (AI may catch context signals keywords don't)
+          parsedResult.ats_score = Math.round(derivedScore * 0.7 + aiScore * 0.3);
+        }
+
+        // Hard clamp to valid range
+        parsedResult.ats_score = Math.max(0, Math.min(100, parsedResult.ats_score));
+      }
+
+      // Ensure arrays are clean
+      parsedResult.matched_keywords = (parsedResult.matched_keywords ?? []).filter(
+        (k: any) => typeof k === "string" && k.trim().length > 0
+      );
+      parsedResult.missing_keywords = (parsedResult.missing_keywords ?? []).filter(
+        (k: any) => typeof k === "string" && k.trim().length > 0
+      );
+
+      // Ensure section_feedback fields exist
+      parsedResult.section_feedback = {
+        summary:    parsedResult.section_feedback?.summary    ?? "No feedback available.",
+        experience: parsedResult.section_feedback?.experience ?? "No feedback available.",
+        skills:     parsedResult.section_feedback?.skills     ?? "No feedback available.",
+      };
+
+      // Normalise literal \n in rewritten_resume (defensive)
+      if (typeof parsedResult.rewritten_resume === "string") {
+        parsedResult.rewritten_resume = parsedResult.rewritten_resume.replace(/\\n/g, "\n");
+      }
+    }
 
     // 7. Increment usage_tracking.analyses_count
     const { error: incrementError } = await supabaseAdmin

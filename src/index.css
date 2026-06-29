@@ -82,3 +82,82 @@ h1, h2, h3, h4, h5, h6 {
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Loading screen animations */
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(44px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(44px) rotate(-360deg); }
+}
+
+@keyframes orbit-reverse {
+  from { transform: rotate(0deg) translateX(60px) rotate(0deg); }
+  to   { transform: rotate(-360deg) translateX(60px) rotate(360deg); }
+}
+
+@keyframes spin-ring {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spin-ring-reverse {
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes tip-in {
+  0%   { opacity: 0; transform: translateY(14px) scale(0.97); }
+  100% { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+@keyframes tip-out {
+  0%   { opacity: 1; transform: translateY(0)    scale(1);    }
+  100% { opacity: 0; transform: translateY(-14px) scale(0.97); }
+}
+
+@keyframes progress-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+@keyframes float-dot {
+  0%, 100% { transform: translateY(0);   opacity: 0.6; }
+  50%       { transform: translateY(-6px); opacity: 1;   }
+}
+
+.animate-orbit {
+  animation: orbit 2.8s linear infinite;
+}
+
+.animate-orbit-reverse {
+  animation: orbit-reverse 4s linear infinite;
+}
+
+.animate-spin-ring {
+  animation: spin-ring 2.8s linear infinite;
+}
+
+.animate-spin-ring-reverse {
+  animation: spin-ring-reverse 4s linear infinite;
+}
+
+.tip-enter {
+  animation: tip-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.tip-exit {
+  animation: tip-out 0.4s ease-in forwards;
+}
+
+.progress-shimmer {
+  background: linear-gradient(
+    90deg,
+    #0d9488 0%,
+    #5eead4 40%,
+    #0d9488 60%,
+    #0f766e 100%
+  );
+  background-size: 200% 100%;
+  animation: progress-shimmer 2s linear infinite;
+}
+
+.float-dot-1 { animation: float-dot 1.4s ease-in-out infinite 0s;   }
+.float-dot-2 { animation: float-dot 1.4s ease-in-out infinite 0.2s; }
+.float-dot-3 { animation: float-dot 1.4s ease-in-out infinite 0.4s; }

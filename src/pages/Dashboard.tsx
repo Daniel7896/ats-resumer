@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import { extractText } from "../utils/fileParser";
 import { Upload, FileText, ChevronRight, AlertCircle, Sparkles, Loader2 } from "lucide-react";
@@ -19,7 +19,55 @@ export const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage, setAnalysi
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [loadProgress, setLoadProgress] = useState(0);
+  const [tipIndex, setTipIndex] = useState(0);
+  const [tipAnimClass, setTipAnimClass] = useState("tip-enter");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const loadStartRef = useRef<number>(0);
+
+  const ATS_TIPS = [
+    { icon: "🎯", title: "Keyword Matching Matters", body: "ATS scanners rank resumes by how well they match exact keywords from the job description. Tailor every resume to each role." },
+    { icon: "📐", title: "Formatting Counts", body: "Fancy tables, graphics, and text boxes confuse most ATS parsers. Plain sections with clear headings score highest." },
+    { icon: "📊", title: "Quantify Achievements", body: "Recruiters spend ~7 seconds on a resume. Numbers like \"Increased revenue by 35%\" grab attention and rank higher." },
+    { icon: "🔑", title: "Use the Exact Job Title", body: "Mirror the exact job title from the posting in your resume headline. It's one of the first fields ATS systems index." },
+    { icon: "📝", title: "File Format Matters", body: "ATS systems read plain-text PDFs and DOCX files best. Avoid image-based PDFs created from scans or screenshots." },
+    { icon: "💼", title: "Skills Section is Critical", body: "Add a dedicated Skills section. Many ATS systems specifically parse this section to pull technical competencies." },
+    { icon: "🚀", title: "Soft Skills Need Context", body: "Don't just list \"leadership\" — back it with a quantified example. ATS and human reviewers both reward specific evidence." },
+    { icon: "🔄", title: "Tailor for Each Application", body: "Generic resumes score 40–60% lower in ATS rankings. Customising your resume per job can double your callback rate." },
+  ];
+
+  const TOTAL_DURATION_S = 70; // estimated max wait in seconds
+
+  useEffect(() => {
+    if (!loading) return;
+    loadStartRef.current = Date.now();
+    setLoadProgress(0);
+    setTipIndex(0);
+    setTipAnimClass("tip-enter");
+
+    let lastTipSlot = 0;
+    const progressInterval = setInterval(() => {
+      const elapsed = (Date.now() - loadStartRef.current) / 1000;
+      const raw = elapsed / TOTAL_DURATION_S;
+      // ease-out so bar slows as it approaches 95%
+      const eased = 1 - Math.pow(1 - Math.min(raw, 1), 2.5);
+      setLoadProgress(Math.min(eased * 95, 95));
+
+      // advance tip card every 5 seconds
+      const currentSlot = Math.floor(elapsed / 5);
+      if (currentSlot > lastTipSlot) {
+        lastTipSlot = currentSlot;
+        // start exit animation, then swap card after 420ms
+        setTipAnimClass("tip-exit");
+        setTimeout(() => {
+          setTipIndex(t => (t + 1) % ATS_TIPS.length);
+          setTipAnimClass("tip-enter");
+        }, 420);
+      }
+    }, 250);
+
+    return () => clearInterval(progressInterval);
+  }, [loading]);
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
@@ -81,7 +129,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage, setAnalysi
       const extractedText = await extractText(file);
       
       if (!extractedText || extractedText.length < 50) {
-        throw new Error("Unable to extract sufficient text from your resume. Ensure it is not an image-only scan.");
+        throw new Error("This PDF appears to be a scanned image with no selectable text. Please upload a text-based PDF or a DOCX file instead.");
       }
 
       // Step 2: Call Edge Function
@@ -104,8 +152,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage, setAnalysi
         let errMsg = "Failed to run analysis.";
         try {
           const bodyJson = await edgeError.context.json();
-          if (bodyJson.message) {
-            errMsg = bodyJson.message;
+          if (bodyJson.error || bodyJson.message) {
+            errMsg = bodyJson.error || bodyJson.message;
           }
         } catch (_) {}
         throw new Error(errMsg);
@@ -137,35 +185,151 @@ export const Dashboard: React.FC<DashboardProps> = ({ setCurrentPage, setAnalysi
 
   const isLimitReached = usage !== null && usage.monthly_analyses !== null && usage.analyses_count >= usage.monthly_analyses;
 
-  // Skeleton analysis screen
+  // ─── Rich animated loading screen ───────────────────────────────────────────
   if (loading) {
+    const steps = [
+      { label: "Extracting resume text",       done: loadProgress > 12 },
+      { label: "Parsing sections & keywords",   done: loadProgress > 30 },
+      { label: "Matching against job posting",  done: loadProgress > 55 },
+      { label: "Scoring ATS compatibility",     done: loadProgress > 75 },
+      { label: "Rewriting & formatting output", done: loadProgress > 90 },
+    ];
+    const currentTip = ATS_TIPS[tipIndex];
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-[75vh] px-4">
-        <div className="w-full max-w-xl text-center space-y-8 glass-card border border-slate-200 rounded-3xl p-8 sm:p-12 shadow-2xl">
-          <div className="relative mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-teal-50 border border-teal-200 shadow-md">
-            <Loader2 className="h-10 w-10 text-teal-600 animate-spin" />
-            <div className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-teal-500 text-[10px] text-white font-bold">
-              AI
+      <div className="flex flex-col items-center justify-center min-h-[85vh] px-4 py-10">
+        <div className="w-full max-w-lg space-y-6">
+
+          {/* ── Orbital animation + title ── */}
+          <div className="glass-card border border-slate-200 rounded-3xl p-8 shadow-2xl text-center space-y-6">
+
+            {/* Orbital rings */}
+            <div className="relative mx-auto flex h-32 w-32 items-center justify-center">
+              {/* Outer spinning dashed ring */}
+              <div
+                className="animate-spin-ring absolute inset-0 rounded-full"
+                style={{
+                  border: "2px dashed rgba(13,148,136,0.25)",
+                  borderTopColor: "rgba(13,148,136,0.7)",
+                }}
+              />
+              {/* Inner counter-spinning ring */}
+              <div
+                className="animate-spin-ring-reverse absolute inset-4 rounded-full"
+                style={{
+                  border: "2px dashed rgba(94,234,212,0.3)",
+                  borderBottomColor: "rgba(94,234,212,0.8)",
+                }}
+              />
+              {/* Orbiting dot 1 */}
+              <div className="animate-orbit absolute h-3 w-3 rounded-full bg-teal-400 shadow-lg shadow-teal-400/50" />
+              {/* Orbiting dot 2 (offset) */}
+              <div
+                className="animate-orbit-reverse absolute h-2 w-2 rounded-full bg-teal-200 shadow shadow-teal-300/50"
+                style={{ animationDelay: "-2s" }}
+              />
+              {/* Centre icon */}
+              <div className="relative z-10 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-teal-500 to-teal-700 shadow-xl shadow-teal-600/30">
+                <Sparkles className="h-7 w-7 text-white" />
+                <span className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-white border-2 border-teal-500 text-[9px] font-extrabold text-teal-700 tracking-tight">
+                  AI
+                </span>
+              </div>
             </div>
-          </div>
-          
-          <div className="space-y-3">
-            <h3 className="font-display text-2xl font-bold text-slate-900">Analyzing Your Resume</h3>
-            <p className="text-sm font-medium text-slate-500 animate-pulse-slow">
-              {loadingStep}
-            </p>
+
+            <div>
+              <h3 className="font-display text-2xl font-bold text-slate-900">Analyzing Your Resume</h3>
+              <p className="mt-1.5 text-sm text-slate-500">{loadingStep || "AI is working hard — this usually takes under 90 seconds"}</p>
+              {/* Typing dots */}
+              <div className="mt-3 flex items-center justify-center space-x-1.5">
+                <div className="float-dot-1 h-2 w-2 rounded-full bg-teal-500" />
+                <div className="float-dot-2 h-2 w-2 rounded-full bg-teal-400" />
+                <div className="float-dot-3 h-2 w-2 rounded-full bg-teal-300" />
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-semibold text-slate-400">
+                <span>Progress</span>
+                <span>{Math.round(loadProgress)}%</span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className="h-full rounded-full progress-shimmer transition-all duration-700 ease-out"
+                  style={{ width: `${loadProgress}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Step checklist */}
+            <div className="space-y-2 text-left">
+              {steps.map((step, i) => {
+                const isActive = !step.done && (i === 0 || steps[i - 1].done);
+                return (
+                  <div key={i} className="flex items-center space-x-3">
+                    <div
+                      className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-500 ${
+                        step.done
+                          ? "bg-teal-500 text-white"
+                          : isActive
+                          ? "border-2 border-teal-400 bg-teal-50 text-teal-600"
+                          : "border-2 border-slate-200 bg-white text-slate-300"
+                      }`}
+                    >
+                      {step.done ? "✓" : i + 1}
+                    </div>
+                    <span
+                      className={`text-xs font-medium transition-colors duration-300 ${
+                        step.done
+                          ? "text-teal-700 line-through decoration-teal-300"
+                          : isActive
+                          ? "text-slate-800"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {step.label}
+                    </span>
+                    {isActive && (
+                      <Loader2 className="h-3.5 w-3.5 text-teal-500 animate-spin flex-shrink-0" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Skeleton progress card */}
-          <div className="space-y-4 pt-4 text-left">
-            <div className="h-4 w-3/4 rounded bg-slate-100 animate-pulse" />
-            <div className="h-4 w-1/2 rounded bg-slate-100 animate-pulse" />
-            <div className="space-y-2 pt-2">
-              <div className="h-3 w-full rounded bg-slate-100 animate-pulse" />
-              <div className="h-3 w-full rounded bg-slate-100 animate-pulse" />
-              <div className="h-3 w-5/6 rounded bg-slate-100 animate-pulse" />
+          {/* ── Cycling tip card ── */}
+          <div
+            key={tipIndex}
+            className={`${tipAnimClass} glass-card border border-teal-100 rounded-2xl p-5 shadow-lg bg-gradient-to-br from-teal-50/80 to-white`}
+          >
+            <div className="flex items-start space-x-4">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-teal-500/10 text-xl border border-teal-100">
+                {currentTip.icon}
+              </div>
+              <div>
+                <div className="flex items-center space-x-2 mb-1">
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-teal-600">ATS Insight</span>
+                  <span className="text-[10px] text-slate-400">{tipIndex + 1}/{ATS_TIPS.length}</span>
+                </div>
+                <p className="text-sm font-bold text-slate-800">{currentTip.title}</p>
+                <p className="mt-1 text-xs text-slate-500 leading-relaxed">{currentTip.body}</p>
+              </div>
+            </div>
+            {/* Tip progress dots */}
+            <div className="mt-4 flex justify-center space-x-1.5">
+              {ATS_TIPS.map((_, i) => (
+                <div
+                  key={i}
+                  className={`h-1.5 rounded-full transition-all duration-500 ${
+                    i === tipIndex ? "w-5 bg-teal-500" : "w-1.5 bg-slate-200"
+                  }`}
+                />
+              ))}
             </div>
           </div>
+
         </div>
       </div>
     );

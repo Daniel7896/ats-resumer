@@ -28,3 +28,8 @@ dist-ssr
 .env.local
 .env.*.local
 
+# Resume PDF files (contain personal data)
+*.pdf
+
+# Supabase CLI temp files
+supabase/.temp/
