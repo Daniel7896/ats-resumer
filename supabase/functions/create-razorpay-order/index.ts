@@ -72,6 +72,9 @@ serve(async (req) => {
 
     // Direct transition to zero-price plan (e.g. downgrading/resetting to free)
     if (planInfo.price === 0) {
+      // CRITICAL SECURITY NOTE: This is one of the ONLY two server-side, service_role write paths
+      // to profiles.plan (the other is inside verify-payment).
+      // These must remain server-side and authenticated. Never add a third write path or move them client-side.
       const { error: profileError } = await supabaseAdmin
         .from("profiles")
         .update({ plan: plan })

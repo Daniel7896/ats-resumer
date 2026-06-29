@@ -28,8 +28,8 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
   
   const [plans, setPlans] = useState<PlanLimit[]>([
     { plan: "free", monthly_analyses: 5, price: 0 },
-    { plan: "standard", monthly_analyses: 50, price: 499 },
-    { plan: "premium", monthly_analyses: null, price: 1299 }
+    { plan: "standard", monthly_analyses: 25, price: 299 },
+    { plan: "premium", monthly_analyses: 50, price: 599 }
   ]);
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -305,6 +305,12 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
                       {p.monthly_analyses === null 
                         ? "Unlimited analyses / month" 
                         : `${p.monthly_analyses} resume analyses / month`}
+                    </span>
+                  </li>
+                  <li className="flex items-start space-x-3 text-sm">
+                    <Check className="h-4.5 w-4.5 text-teal-600 flex-shrink-0 mt-0.5" />
+                    <span className="text-slate-600 font-medium">
+                      {p.plan === "free" ? "Last 3 history saved" : "Full history saved"}
                     </span>
                   </li>
                   <li className="flex items-start space-x-3 text-sm">

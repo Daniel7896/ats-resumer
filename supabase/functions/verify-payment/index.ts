@@ -56,6 +56,18 @@ serve(async (req) => {
       });
     }
 
+    // Explicitly reject any mock order or payment IDs in the production deployed function
+    if (
+      razorpay_order_id.includes("mock") || 
+      razorpay_payment_id.includes("mock") || 
+      (razorpay_signature && razorpay_signature.includes("mock"))
+    ) {
+      return new Response(JSON.stringify({ error: "Mock payments are prohibited." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Retrieve order log from DB
     const { data: paymentLog, error: logError } = await supabaseAdmin
       .from("payments")
@@ -70,46 +82,10 @@ serve(async (req) => {
       });
     }
 
-    const isDev = Deno.env.get("ENVIRONMENT") === "development";
-    const isMock = razorpay_order_id.startsWith("order_mock_") || razorpay_payment_id.startsWith("pay_mock_");
-
-    if (isMock) {
-      if (!isDev) {
-        return new Response(
-          JSON.stringify({ error: "Mock payments are prohibited in the production environment." }),
-          {
-            status: 403,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          }
-        );
-      }
-
-      // Mock signature verification succeeds directly in dev
-      // Update payment record in database
-      const { error: updateError } = await supabaseAdmin
-        .from("payments")
-        .update({
-          razorpay_payment_id,
-          razorpay_signature: razorpay_signature || "mock_signature",
-          status: "paid",
-        })
-        .eq("razorpay_order_id", razorpay_order_id);
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      // Update user plan to paid tier using service_role
-      const { error: profileError } = await supabaseAdmin
-        .from("profiles")
-        .update({ plan: paymentLog.plan })
-        .eq("id", paymentLog.user_id);
-
-      if (profileError) {
-        throw profileError;
-      }
-
-      return new Response(JSON.stringify({ success: true, plan: paymentLog.plan }), {
+    // CRITICAL: Explicit ownership check to prevent cross-user verification tampering (defense in depth)
+    if (paymentLog.user_id !== user.id) {
+      return new Response(JSON.stringify({ error: "Order does not belong to this user" }), {
+        status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -171,7 +147,9 @@ serve(async (req) => {
       throw updateError;
     }
 
-    // Update user profile plan
+    // CRITICAL SECURITY NOTE: This is one of the ONLY two server-side, service_role write paths
+    // to profiles.plan (the other is the zero-price/free downgrade path in create-razorpay-order).
+    // These must remain server-side and authenticated. Never add a third write path or move them client-side.
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
       .update({ plan: paymentLog.plan })
