@@ -144,8 +144,8 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
 
         await refreshProfile();
         await fetchUsage();
-        setSuccessMsg(`[MOCK] Successfully upgraded to the ${planName.toUpperCase()} plan!`);
-        setTimeout(() => setSuccessMsg(null), 5000);
+        setSuccessMsg(`[MOCK] Successfully upgraded to the ${planName.toUpperCase()} plan! A confirmation details email has been simulated to ${user.email}.`);
+        setTimeout(() => setSuccessMsg(null), 7000);
         return;
       }
 
@@ -192,8 +192,8 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
 
             await refreshProfile();
             await fetchUsage();
-            setSuccessMsg(`Successfully upgraded to the ${planName.toUpperCase()} plan!`);
-            setTimeout(() => setSuccessMsg(null), 5000);
+            setSuccessMsg(`Successfully upgraded to the ${planName.toUpperCase()} plan! A confirmation details email has been sent to ${user.email}.`);
+            setTimeout(() => setSuccessMsg(null), 7000);
           } catch (err: any) {
             console.error("Signature verification error:", err);
             alert(`Payment verification failed: ${err.message}`);
