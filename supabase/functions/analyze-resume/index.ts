@@ -234,7 +234,17 @@ Perform an expert analysis of the resume against the job description:
       });
     }
 
-    const parsedResult = JSON.parse(responseJsonText);
+    let parsedResult;
+    try {
+      parsedResult = JSON.parse(responseJsonText);
+    } catch (parseError) {
+      console.error("Failed to parse Gemini JSON output:", parseError, "Raw output:", responseJsonText);
+      return new Response(JSON.stringify({ error: "Failed to parse AI response structure" }), {
+        status: 502,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
 
     // 7. Increment usage_tracking.analyses_count
     const { error: incrementError } = await supabaseAdmin

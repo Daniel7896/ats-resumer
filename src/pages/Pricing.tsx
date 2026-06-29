@@ -13,6 +13,16 @@ interface PricingProps {
   setCurrentPage: (page: any) => void;
 }
 
+const loadScript = (src: string): Promise<boolean> => {
+  return new Promise((resolve) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+};
+
 export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
   const { user, profile, refreshProfile, fetchUsage } = useAuth();
   
@@ -23,7 +33,7 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
   ]);
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPlanLimits = async () => {
@@ -56,25 +66,160 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
     }
 
     setUpdatingPlan(planName);
+    setErrorMsg(null);
     setSuccessMsg(null);
 
     try {
-      // Direct updates of user profiles inside Supabase for live sandbox testing
-      const { error } = await supabase
-        .from("profiles")
-        .update({ plan: planName })
-        .eq("id", user.id);
+      const session = (await supabase.auth.getSession()).data.session;
+      if (!session) {
+        throw new Error("No active authentication session. Please sign in again.");
+      }
 
-      if (error) throw error;
+      // Check if we should use mock payment flow (DEV environment only and no Key ID configured)
+      const useMockFlow = import.meta.env.DEV && !import.meta.env.VITE_RAZORPAY_KEY_ID;
 
-      // Sync global auth state profiles and usages
-      await refreshProfile();
-      await fetchUsage();
+      // 1. Create the order via create-razorpay-order Edge Function
+      const createOrderUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-razorpay-order`;
+      const orderRes = await fetch(createOrderUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+          "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify({ plan: planName, mock: useMockFlow })
+      });
 
-      setSuccessMsg(`Successfully upgraded to the ${planName.toUpperCase()} plan!`);
-      setTimeout(() => setSuccessMsg(null), 5000);
-    } catch (err) {
-      console.error("Upgrade error:", err);
+      if (!orderRes.ok) {
+        const errData = await orderRes.json();
+        throw new Error(errData.error || "Failed to initiate transaction");
+      }
+
+      const orderData = await orderRes.json();
+
+      // If it's a zero-price plan (e.g. downgrading/resetting to free), it directly transitions without payment checkout
+      if (orderData.zeroPrice) {
+        await refreshProfile();
+        await fetchUsage();
+        setSuccessMsg(`Successfully updated plan to ${planName.toUpperCase()}!`);
+        setTimeout(() => setSuccessMsg(null), 5000);
+        return;
+      }
+
+      if (useMockFlow) {
+        // Mock Sandbox Checkout Flow (DEV environment only)
+        const confirmMock = window.confirm(
+          `[SANDBOX MODE] Simulate successful payment of ₹${orderData.amount / 100} for standard/premium upgrade?`
+        );
+
+        if (!confirmMock) {
+          throw new Error("Mock payment cancelled by user");
+        }
+
+        // Call verify-payment Edge Function with mock details
+        const verifyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-payment`;
+        const verifyRes = await fetch(verifyUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`,
+            "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY
+          },
+          body: JSON.stringify({
+            razorpay_order_id: orderData.id,
+            razorpay_payment_id: `pay_mock_${Math.random().toString(36).substring(2, 15)}`,
+            razorpay_signature: "mock_signature_approved"
+          })
+        });
+
+        if (!verifyRes.ok) {
+          const errData = await verifyRes.json();
+          throw new Error(errData.error || "Mock payment verification failed");
+        }
+
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) {
+          throw new Error("Mock payment verification returned failure");
+        }
+
+        await refreshProfile();
+        await fetchUsage();
+        setSuccessMsg(`[MOCK] Successfully upgraded to the ${planName.toUpperCase()} plan!`);
+        setTimeout(() => setSuccessMsg(null), 5000);
+        return;
+      }
+
+      // Real Checkout Flow
+      const isLoaded = await loadScript("https://checkout.razorpay.com/v1/checkout.js");
+      if (!isLoaded) {
+        throw new Error("Failed to load Razorpay Checkout SDK. Check your internet connection.");
+      }
+
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: orderData.amount,
+        currency: orderData.currency,
+        name: "ATS Resumer",
+        description: `Upgrade to ${planName.toUpperCase()} Plan`,
+        order_id: orderData.id,
+        handler: async function (response: any) {
+          try {
+            setUpdatingPlan(planName);
+            const verifyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/verify-payment`;
+            const verifyRes = await fetch(verifyUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${session.access_token}`,
+                "apikey": import.meta.env.VITE_SUPABASE_ANON_KEY
+              },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+
+            if (!verifyRes.ok) {
+              const errData = await verifyRes.json();
+              throw new Error(errData.error || "Payment verification failed");
+            }
+
+            const verifyData = await verifyRes.json();
+            if (!verifyData.success) {
+              throw new Error("Payment verification failed");
+            }
+
+            await refreshProfile();
+            await fetchUsage();
+            setSuccessMsg(`Successfully upgraded to the ${planName.toUpperCase()} plan!`);
+            setTimeout(() => setSuccessMsg(null), 5000);
+          } catch (err: any) {
+            console.error("Signature verification error:", err);
+            alert(`Payment verification failed: ${err.message}`);
+          } finally {
+            setUpdatingPlan(null);
+          }
+        },
+        prefill: {
+          name: profile?.full_name || "",
+          email: user.email || ""
+        },
+        theme: {
+          color: "#0d9488"
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.on("payment.failed", function (response: any) {
+        console.error("Payment failed:", response.error);
+        alert(`Payment failed: ${response.error.description}`);
+      });
+      rzp.open();
+
+    } catch (err: any) {
+      console.error("Subscription upgrade failed:", err);
+      setErrorMsg(err.message || "An unexpected error occurred during checkout.");
     } finally {
       setUpdatingPlan(null);
     }
@@ -99,8 +244,14 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
         </p>
 
         {successMsg && (
-          <div className="mt-8 inline-flex items-center space-x-2 rounded-2xl bg-emerald-50 border border-emerald-200 px-6 py-3 text-sm text-emerald-800 shadow-sm">
+          <div className="mt-8 inline-flex items-center space-x-2 rounded-2xl bg-emerald-50 border border-emerald-200 px-6 py-3 text-sm text-emerald-800 shadow-sm animate-pulse">
             <span className="font-semibold">{successMsg}</span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div className="mt-8 inline-flex items-center space-x-2 rounded-2xl bg-rose-50 border border-rose-200 px-6 py-3 text-sm text-rose-800 shadow-sm">
+            <span className="font-semibold">{errorMsg}</span>
           </div>
         )}
       </div>
@@ -185,7 +336,7 @@ export const Pricing: React.FC<PricingProps> = ({ setCurrentPage }) => {
                   {updatingPlan === p.plan ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin text-white" />
-                      <span>Updating...</span>
+                      <span>Processing...</span>
                     </>
                   ) : isActive ? (
                     <span>Active Plan</span>

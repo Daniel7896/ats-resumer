@@ -7,10 +7,11 @@ import { Dashboard } from "./pages/Dashboard";
 import { Results } from "./pages/Results";
 import { History } from "./pages/History";
 import { Pricing } from "./pages/Pricing";
+import { Welcome } from "./pages/Welcome";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { isSupabaseConfigured } from "./supabaseClient";
 
-type Page = "landing" | "auth" | "dashboard" | "results" | "history" | "pricing";
+type Page = "landing" | "auth" | "dashboard" | "results" | "history" | "pricing" | "welcome";
 
 const SupabaseWarning: React.FC = () => {
   return (
@@ -64,16 +65,26 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (loading) return;
 
-    const privatePages = ["dashboard", "results", "history"];
+    const privatePages = ["dashboard", "results", "history", "welcome"];
     
     // Redirect unauthenticated users trying to access private dashboard pages
     if (!user && privatePages.includes(currentPage)) {
       setCurrentPage("landing");
+      return;
     }
 
-    // Redirect authenticated users trying to access landing/auth
-    if (user && (currentPage === "landing" || currentPage === "auth")) {
-      setCurrentPage("dashboard");
+    // Redirect authenticated users
+    if (user) {
+      const hasSeenWelcome = localStorage.getItem(`hasSeenWelcome_${user.id}`);
+      if (!hasSeenWelcome) {
+        if (currentPage !== "welcome" && currentPage !== "pricing") {
+          setCurrentPage("welcome");
+        }
+      } else {
+        if (currentPage === "landing" || currentPage === "auth" || currentPage === "welcome") {
+          setCurrentPage("dashboard");
+        }
+      }
     }
   }, [user, loading, currentPage]);
 
@@ -94,6 +105,7 @@ const AppContent: React.FC = () => {
       <main className="flex-grow">
         {currentPage === "landing" && <Landing setCurrentPage={setCurrentPage} />}
         {currentPage === "auth" && <Auth setCurrentPage={setCurrentPage} />}
+        {currentPage === "welcome" && <Welcome setCurrentPage={setCurrentPage} />}
         {currentPage === "dashboard" && (
           <Dashboard 
             setCurrentPage={setCurrentPage} 
